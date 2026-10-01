@@ -11,6 +11,7 @@
 *.wasm
 *.data
 *.db
+shop.db
 **/lib/
 **/lib_wasm/
 

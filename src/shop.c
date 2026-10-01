@@ -31,6 +31,7 @@
 #include "display.c"
 #include "admin.c"
 #include "adv_search.c"
+#include "account.c"
 #include "web_clipboard.c"
 
 int main(int argc, char* argv[]) {
@@ -147,6 +148,9 @@ void ui_render_pass(Shop* shop) {
     }
     if (shop->adv_search.active) {
         adv_search_panel(shop, &shop->adv_search);
+    }
+    if (shop->screen == ACCOUNT_SCREEN && !shop->admin.active && !shop->adv_search.active) {
+        account_panel(shop);
     }
     rlImGuiEnd();
 }
@@ -487,45 +491,64 @@ bool init_shop(Shop *shop) {
     init_text_ed(ed);
     init_admin_panel(admin, ed);
 
-    // Database setup
-    int rc = sqlite3_open(":memory:", &admin->db); // NO PERSISTANT DB FOR NOW!!
-    if (rc != SQLITE_OK) {
+    // Use a file-backed SQLite database on desktop so local accounts, carts,
+    // discounts, and orders can persist between runs. The web build will use
+    // a server/API later, so it remains in-memory for now.
+#ifdef PLATFORM_WEB
+    int database_result = sqlite3_open(":memory:", &admin->db);
+#else
+    int database_result = sqlite3_open("shop.db", &admin->db);
+#endif
+    if (database_result != SQLITE_OK) {
         printf("sqlite open failed: `%s`\n", sqlite3_errmsg(admin->db));
         return false;
     }
-    // load `csv`s
-    char path[] = "assets/csv/items.csv"; 
-    SQL_Result csv = admin_load_csv(admin, path);
-    if (csv.error) {
-        printf("admin_load_csv failed: `%s`\n", csv.error);
-        return false;
+
+    // Import the product CSV only when the existing item table is missing.
+    // This avoids recreating product data every time the persistent database opens.
+    sqlite3_stmt* item_table_check = NULL;
+    bool item_table_exists = false;
+    const char* item_table_query =
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='items' LIMIT 1;";
+
+    if (sqlite3_prepare_v2(admin->db, item_table_query, -1, &item_table_check, NULL) == SQLITE_OK) {
+        item_table_exists = sqlite3_step(item_table_check) == SQLITE_ROW;
     }
-    // convert according to schema convention
-    SQL_Result typed = sql_run(admin,
-        "CREATE TABLE items_typed ("
-            "id INTEGER PRIMARY KEY,"
-            "name TEXT NOT NULL,"
-            "description TEXT NOT NULL,"
-            "price REAL NOT NULL CHECK(price >= 0),"
-            "stock INTEGER NOT NULL CHECK(stock >= 0),"
-            "category TEXT NOT NULL,"
-            "display TEXT NOT NULL"
-        ");"
-        "INSERT INTO items_typed "
-        "SELECT "
-            "CAST(id AS INTEGER),"
-            "name,"
-            "description,"
-            "CAST(price AS REAL),"
-            "CAST(stock AS INTEGER),"
-            "category,"
-            "display "
-        "FROM items;"
-        "DROP TABLE items;"
-        "ALTER TABLE items_typed RENAME to items;"
-    );
-    if (typed.error) {
-        printf("csv type coerce failed: `%s`\n", typed.error);
+    sqlite3_finalize(item_table_check);
+
+    if (!item_table_exists) {
+        char item_csv_path[] = "assets/csv/items.csv";
+        SQL_Result csv_result = admin_load_csv(admin, item_csv_path);
+        if (csv_result.error) {
+            printf("admin_load_csv failed: `%s`\n", csv_result.error);
+            return false;
+        }
+
+        SQL_Result typed_result = sql_run(admin,
+            "CREATE TABLE items_typed ("
+                "id INTEGER PRIMARY KEY,"
+                "name TEXT NOT NULL,"
+                "description TEXT NOT NULL,"
+                "price REAL NOT NULL CHECK(price >= 0),"
+                "stock INTEGER NOT NULL CHECK(stock >= 0),"
+                "category TEXT NOT NULL,"
+                "display TEXT NOT NULL"
+            ");"
+            "INSERT INTO items_typed "
+            "SELECT CAST(id AS INTEGER), name, description, CAST(price AS REAL), "
+                   "CAST(stock AS INTEGER), category, display FROM items;"
+            "DROP TABLE items;"
+            "ALTER TABLE items_typed RENAME TO items;"
+        );
+
+        if (typed_result.error) {
+            printf("csv type coerce failed: `%s`\n", typed_result.error);
+            return false;
+        }
+    }
+
+    if (!auth_init(shop)) {
+        printf("failed to initialize account/cart/order database tables\n");
         return false;
     }
     schema_list_refresh(admin);
@@ -627,6 +650,10 @@ void update_shop(Shop *shop) {
         }
         break;
 
+    case ACCOUNT_SCREEN:
+        update_account(shop);
+        break;
+
     case DISPLAY_SCREEN:
         update_display(shop);
         if (button_event(shop, back_button_bounds(shop))) {
@@ -704,6 +731,11 @@ void draw_shop(Shop *shop) {
         draw_home(shop);
         draw_search_bar(shop);
         draw_button(shop, advanced_search_button_bounds(shop), "Adv.", SHOP_BLUE);
+        break;
+
+    case ACCOUNT_SCREEN:
+        ClearBackground(SHOP_BG);
+        draw_account(shop);
         break;
 
     case DISPLAY_SCREEN:

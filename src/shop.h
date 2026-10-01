@@ -73,6 +73,36 @@ typedef struct {
     bool use_min,use_max,use_stock,descending;
 } Adv_Search_Panel;
 
+
+typedef struct {
+    bool success;
+    int user_id;
+    char username[100];
+    char email[160];
+    char message[256];
+} Auth_Result;
+
+typedef struct {
+    bool register_mode;
+    bool forgot_password_mode;
+    bool logged_in;
+    bool show_password;
+    int user_id;
+
+    char username[100];
+    char email[160];
+    char password[100];
+
+    char current_username[100];
+    char current_email[160];
+    char current_password[100];
+    char new_password[100];
+    char confirm_password[100];
+
+    char message[256];
+    char settings_message[256];
+} Account_State;
+
 typedef enum {
     LOAD_SCREEN,
     HOME_SCREEN,
@@ -120,6 +150,7 @@ typedef Ht(int, Item_Resource) Item_Resource_Table;
 typedef struct Shop {
     Admin_Panel admin;
     Adv_Search_Panel adv_search;
+    Account_State account;
 
     Item_Resource_Table item_resources;
     bool paused;
@@ -163,6 +194,17 @@ int carousel_focused_item_index(Item_List items, float scroll, float spacing);
 float carousel_item_alpha(Item_List items, float scroll, float spacing);
 Item_List query_items(Shop* shop, const char* sql);
 void reset_item_list(Item_List* list);
+void draw_button(Shop* shop, Rectangle bounds, const char* label, Color color);
+bool button_event(Shop* shop, Rectangle bounds);
+Rectangle back_button_bounds(Shop* shop);
+
+bool auth_init(Shop* shop);
+Auth_Result auth_login(Shop* shop, const char* username, const char* password);
+Auth_Result auth_register(Shop* shop, const char* username, const char* password);
+void auth_logout(Shop* shop);
+void update_account(Shop* shop);
+void draw_account(Shop* shop);
+void account_panel(Shop* shop);
 
 bool init_shop(Shop *shop);
 void update_shop(Shop *shop);
