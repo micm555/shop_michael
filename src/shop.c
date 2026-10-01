@@ -491,9 +491,9 @@ bool init_shop(Shop *shop) {
     init_text_ed(ed);
     init_admin_panel(admin, ed);
 
-    // Use a file-backed SQLite database on desktop so local accounts, carts,
-    // discounts, and orders can persist between runs. The web build will use
-    // a server/API later, so it remains in-memory for now.
+    // Use a file-backed SQLite database on desktop so local account data can
+    // persist between runs. The web build will use a server/API later, so it
+    // remains in-memory for now.
 #ifdef PLATFORM_WEB
     int database_result = sqlite3_open(":memory:", &admin->db);
 #else
@@ -548,7 +548,7 @@ bool init_shop(Shop *shop) {
     }
 
     if (!auth_init(shop)) {
-        printf("failed to initialize account/cart/order database tables\n");
+        printf("failed to initialize account database table\n");
         return false;
     }
     schema_list_refresh(admin);

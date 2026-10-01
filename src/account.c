@@ -27,7 +27,6 @@ static bool account_run_sql(Shop* shop, const char* sql) {
 bool auth_init(Shop* shop) {
     const char* account_schema =
         "PRAGMA foreign_keys = ON;"
-
         "CREATE TABLE IF NOT EXISTS users ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
             "username TEXT UNIQUE NOT NULL COLLATE NOCASE,"
@@ -35,54 +34,6 @@ bool auth_init(Shop* shop) {
             "password_hash TEXT NOT NULL,"
             "is_admin INTEGER NOT NULL DEFAULT 0,"
             "created_at TEXT DEFAULT CURRENT_TIMESTAMP"
-        ");"
-
-        "CREATE TABLE IF NOT EXISTS carts ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "user_id INTEGER UNIQUE NOT NULL,"
-            "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
-            "FOREIGN KEY (user_id) REFERENCES users(id)"
-        ");"
-
-        "CREATE TABLE IF NOT EXISTS cart_items ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "cart_id INTEGER NOT NULL,"
-            "product_id INTEGER NOT NULL,"
-            "quantity INTEGER NOT NULL DEFAULT 1,"
-            "FOREIGN KEY (cart_id) REFERENCES carts(id)"
-        ");"
-
-        "CREATE TABLE IF NOT EXISTS discount_codes ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "code TEXT UNIQUE NOT NULL,"
-            "discount_type TEXT NOT NULL,"
-            "discount_value NUMERIC NOT NULL,"
-            "is_active INTEGER NOT NULL DEFAULT 1,"
-            "expiration_date TEXT,"
-            "created_at TEXT DEFAULT CURRENT_TIMESTAMP"
-        ");"
-
-        "CREATE TABLE IF NOT EXISTS orders ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "user_id INTEGER NOT NULL,"
-            "discount_code_id INTEGER,"
-            "subtotal NUMERIC NOT NULL,"
-            "discount_amount NUMERIC NOT NULL DEFAULT 0,"
-            "tax_amount NUMERIC NOT NULL,"
-            "total_amount NUMERIC NOT NULL,"
-            "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
-            "FOREIGN KEY (user_id) REFERENCES users(id),"
-            "FOREIGN KEY (discount_code_id) REFERENCES discount_codes(id)"
-        ");"
-
-        "CREATE TABLE IF NOT EXISTS order_items ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "order_id INTEGER NOT NULL,"
-            "product_id INTEGER NOT NULL,"
-            "product_name TEXT NOT NULL,"
-            "quantity INTEGER NOT NULL,"
-            "unit_price NUMERIC NOT NULL,"
-            "FOREIGN KEY (order_id) REFERENCES orders(id)"
         ");";
 
     return account_run_sql(shop, account_schema);
@@ -483,44 +434,6 @@ static void draw_password_visibility_button(Account_State* account, const char* 
     }
 }
 
-static void draw_order_history(Shop* shop) {
-    const char* order_history_sql =
-        "SELECT id, total_amount, created_at "
-        "FROM orders WHERE user_id = ?1 "
-        "ORDER BY created_at DESC, id DESC LIMIT 5;";
-
-    sqlite3_stmt* statement = NULL;
-    if (sqlite3_prepare_v2(shop->admin.db, order_history_sql, -1, &statement, NULL) != SQLITE_OK) {
-        ImGui_TextDisabled("Order history is unavailable.");
-        return;
-    }
-
-    sqlite3_bind_int(statement, 1, shop->account.user_id);
-
-    int order_count = 0;
-    while (sqlite3_step(statement) == SQLITE_ROW) {
-        order_count++;
-
-        int order_id = sqlite3_column_int(statement, 0);
-        double order_total = sqlite3_column_double(statement, 1);
-        const unsigned char* created_at = sqlite3_column_text(statement, 2);
-
-        ImGui_Text("Order #%d   $%.2f", order_id, order_total);
-        ImGui_TextDisabled("%s", created_at ? (const char*)created_at : "");
-
-        if (order_count < 5) {
-            ImGui_Separator();
-        }
-    }
-
-    sqlite3_finalize(statement);
-
-    if (order_count == 0) {
-        ImGui_TextDisabled("No orders yet.");
-        ImGui_TextWrapped("Completed purchases will appear here once checkout saves orders to the database.");
-    }
-}
-
 static void draw_logged_in_account(Shop* shop) {
     Account_State* account = &shop->account;
 
@@ -596,13 +509,6 @@ static void draw_logged_in_account(Shop* shop) {
     if (account->settings_message[0] != '\0') {
         ImGui_TextWrapped("%s", account->settings_message);
     }
-
-    ImGui_Spacing();
-    ImGui_Separator();
-    ImGui_Spacing();
-
-    ImGui_TextUnformatted("Order History");
-    draw_order_history(shop);
 
     ImGui_Spacing();
     if (ImGui_ButtonEx("Logout##account_logout", (ImVec2){-1.0f, 38.0f})) {
